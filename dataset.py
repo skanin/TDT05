@@ -9,7 +9,8 @@ from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import SimpleImputer, IterativeImputer
 from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import GaussianNB
-from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier
+from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier, StackingClassifier
+from sklearn.linear_model import LogisticRegression
 from lightgbm import LGBMClassifier
 from sklearn.metrics import accuracy_score, roc_auc_score
 class Dataset:
@@ -149,9 +150,6 @@ class Dataset:
             df[col].fillna(np.mean(df[col]))
     
     def transform(self, df : pd.DataFrame, test : bool) -> None:
-    
-        
-
         if test:
             self.X_test = pd.DataFrame(self.preprocessor.transform(self.X_test).toarray())
         else:
@@ -174,10 +172,10 @@ def predict(data : pd.DataFrame, labels : pd.DataFrame, test : pd.DataFrame, cla
 
 def get_classifier(name : str) -> namedtuple:
     classifiers = {
-        'adaboost': AdaBoostClassifier(),
+        'adaboost': AdaBoostClassifier(n_estimators=100, random_state=0),
         'gnb': GaussianNB(),
         'lgbm': LGBMClassifier(),
-        'rf': RandomForestClassifier(n_estimators=1000),
+        'rf': RandomForestClassifier(n_estimators=100),
     }
 
     if name not in list(classifiers.keys()):
@@ -209,16 +207,25 @@ if __name__ == '__main__':
     
     X_train_split, X_test_split, y_train_split, y_test_split = split(X_train, y)
 
-    clf = get_classifier('rf')
+    # clf = get_classifier('adaboost')
+    classifiers = {
+        'adaboost': AdaBoostClassifier(n_estimators=100, random_state=0),
+        'gnb': GaussianNB(),
+        'lgbm': LGBMClassifier(),
+        'rf': RandomForestClassifier(n_estimators=100),
+    }
 
-    prediction = predict(X_train_split, y_train_split, X_test_split, clf)
+    clf = StackingClassifier(estimators = list(classifiers.items()), final_estimator = LogisticRegression())
+    print('Starting prediction')
+    prediction = predict(X_train_split, y_train_split, X_test, clf)
+    print('Prediction done')
 
-    print_accuracy(prediction, y_test_split, 'rf')
-    # f = open("./pred.csv", "w")
-    # f.write("id,target\n")
-    # id_nr = 50000
-    # for v in prediction[:, 1]:
-    #     f.write(f"{id_nr},{v}\n")
-    #     id_nr += 1
-    # f.close()
-    # save_predictions(clf.predict(X_test))
+    # print_accuracy(prediction, y_test_split, 'Stacking')
+    f = open("./pred.csv", "w")
+    f.write("id,target\n")
+    id_nr = 50000
+    for v in prediction[:, 1]:
+        f.write(f"{id_nr},{v}\n")
+        id_nr += 1
+    f.close()
+    save_predictions(clf.predict(X_test))
