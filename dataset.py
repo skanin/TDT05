@@ -4,7 +4,7 @@ import numpy as np
 from collections import namedtuple
 from imblearn.pipeline import make_pipeline
 from sklearn.compose import make_column_transformer
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, OrdinalEncoder
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import SimpleImputer, IterativeImputer
 from sklearn.model_selection import train_test_split
@@ -19,9 +19,11 @@ class Dataset:
     hex_columns = ['f2', 'f3', 'f13', 'f18', 'f20', 'f26']
     bool_columns = ['f28', 'f22', 'f14']
     ordinal_columns = ['f6', 'f8', 'f16', 'f17', 'f19', 'f21', 'f25']
-    categorical_columns = ['f1', 'f5', 'f7', 'f9', 'f11', 'f12', 'f23', 'f24', 'f27']
+    categorical_columns = ['f1', 'f5', 'f7', 'f9', 'f11', 'f24']
     numerical_columns = ['f4']
-    alphabet_columns = ['f0', 'f15']
+    alphabet_columns = ['f0']
+    ordinal_cat_columns = ['f0', 'f10', 'f12', 'f23', 'f27']
+    binary_columns = ['f10']
     all_columns = ['f' + str(i) for i in range(0, 28)]
     removed_cols = []
 
@@ -39,19 +41,24 @@ class Dataset:
         )
 
         self.categorical_transformer = make_pipeline(
-            SimpleImputer(strategy='constant', fill_value='missing'),
-            OneHotEncoder(handle_unknown='ignore')
+            SimpleImputer(strategy='most_frequent'),
+            OrdinalEncoder()
+        )
+
+        self.ordinal_transformer = make_pipeline(
+            SimpleImputer(strategy='most_frequent'),
+            OrdinalEncoder()
         )
 
         numerical_transformer_cols = self.numerical_columns + self.hex_columns + self.bool_columns + self.ordinal_columns
         categorical_transformer_cols = self.categorical_columns + self.alphabet_columns
-            
-        categorical_transformer_cols.remove('f15')
+
         categorical_transformer_cols.remove('f11')
 
         self.preprocessor = make_column_transformer(
             (self.numeric_transformer, numerical_transformer_cols),
-            (self.categorical_transformer, categorical_transformer_cols)
+            (self.categorical_transformer, categorical_transformer_cols),
+            (self.ordinal_transformer, self.ordinal_cat_columns)
         )
 
     def load(self) -> tuple:
@@ -109,6 +116,7 @@ class Dataset:
     def conv_columns(self, df : pd.DataFrame) -> None:
         self.conv_hex(df)
         self.conv_bool(df)
+        self.conv_binary(df)
     
     def conv_hex(self, df : pd.DataFrame) -> None:
         def conv_hex_map(x):
@@ -144,6 +152,25 @@ class Dataset:
             col_loc = list(df.columns).index(col)
             df[col] = df[col].apply(lambda x: conv_bool_map(x))
 
+    def conv_binary(self, df : pd.DataFrame):
+        def binaryToDecimal(binary):
+            try:
+                binary = int(binary)
+            except:
+                return np.nan
+            
+            binary1 = binary
+            decimal, i, n = 0, 0, 0
+            while(binary != 0):
+                dec = binary % 10
+                decimal = decimal + dec * pow(2, i)
+                binary = binary//10
+                i += 1
+            return decimal
+        for col in self.binary_columns:
+            if col not in list(df.columns):
+                continue
+        df[col] = df[col].apply(lambda x: binaryToDecimal(x))    
     # def fillna(self, df : pd.DataFrame) -> None:
     #     for col in self.numerical_columns + self.ordinal_columns + self.hex_columns:
     #         if col not in list(df.columns):
@@ -152,10 +179,12 @@ class Dataset:
     
     def transform(self, df : pd.DataFrame, test : bool) -> None:
         if test:
-            self.X_test = pd.DataFrame(self.preprocessor.transform(self.X_test).toarray())
+            self.X_test = pd.DataFrame(self.preprocessor.transform(self.X_test))
+            print(pd.DataFrame({'total_missing': self.X_test.isnull().sum(), 'perc_missing': (self.X_test.isnull().sum()/50000)*100}))
         else:
             # print(self.X_train.head())
-            self.X_train = pd.DataFrame(self.preprocessor.fit_transform(self.X_train, self.y).toarray())
+            self.X_train = pd.DataFrame(self.preprocessor.fit_transform(self.X_train, self.y))
+            print(pd.DataFrame({'total_missing': self.X_train.isnull().sum(), 'perc_missing': (self.X_train.isnull().sum()/50000)*100}))
     
     def remove_duplicates(self, df : pd.DataFrame) -> None:
         df.drop_duplicates(inplace=True)
@@ -221,17 +250,18 @@ if __name__ == '__main__':
         'gnb': GaussianNB(),
         'lgbm': LGBMClassifier(),
         'rf': RandomForestClassifier(n_estimators=100),
-        # 'catboost': CatBoostClassifier(iterations=10000, learning_rate=.1, depth=2)
+        'catboost': CatBoostClassifier(iterations=10000, learning_rate=.1, depth=2)
     }
 
-    clf = StackingClassifier(estimators = list(classifiers.items()), final_estimator = CatBoostClassifier(iterations=10000, learning_rate=.1, depth=2))
+    # clf = StackingClassifier(estimators = list(classifiers.items()), final_estimator = CatBoostClassifier(iterations=10000, learning_rate=.1, depth=2))
+    clf = classifiers['adaboost']
     print('Starting prediction')
     fit(X_train_split, y_train_split, clf)
     print('Prediction done')
     
     prediction = predict_proba(clf, X_test_split)
 
-    print_accuracy(prediction, y_test_split, 'Stacking')
+    print_accuracy(prediction, y_test_split, 'adaboost')
 
     real_pred = predict_proba(clf, X_test)
 
