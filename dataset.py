@@ -13,6 +13,7 @@ from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier, Stackin
 from sklearn.linear_model import LogisticRegression
 from lightgbm import LGBMClassifier
 from sklearn.metrics import accuracy_score, roc_auc_score
+from catboost import CatBoostClassifier
 class Dataset:
     
     hex_columns = ['f2', 'f3', 'f13', 'f18', 'f20', 'f26']
@@ -86,7 +87,7 @@ class Dataset:
         self.remove_duplicates(df)
         
         self.conv_columns(df)
-        self.fillna(df)
+        # self.fillna(df)
         self.transform(df, test)
                 
     def remove_duplicate_columns(self, df : pd.DataFrame) -> None:
@@ -122,7 +123,7 @@ class Dataset:
             if col not in list(df.columns):
                 continue
             col_loc = list(df.columns).index(col)
-            df.iloc[:,col_loc] = df[col].apply(lambda x: conv_hex_map(x)).values
+            df[col] = df[col].apply(lambda x: conv_hex_map(x))
 
     def conv_bool(self, df : pd.DataFrame):
         def conv_bool_map(x):
@@ -141,13 +142,13 @@ class Dataset:
             if col not in list(df.columns):
                 continue
             col_loc = list(df.columns).index(col)
-            df.iloc[:,col_loc] = df[col].apply(lambda x: conv_bool_map(x)).values
+            df[col] = df[col].apply(lambda x: conv_bool_map(x))
 
-    def fillna(self, df : pd.DataFrame) -> None:
-        for col in self.numerical_columns + self.ordinal_columns + self.hex_columns:
-            if col not in list(df.columns):
-                continue
-            df[col].fillna(np.mean(df[col]))
+    # def fillna(self, df : pd.DataFrame) -> None:
+    #     for col in self.numerical_columns + self.ordinal_columns + self.hex_columns:
+    #         if col not in list(df.columns):
+    #             continue
+    #         df[col].fillna(np.mean(df[col]))
     
     def transform(self, df : pd.DataFrame, test : bool) -> None:
         if test:
@@ -164,11 +165,18 @@ def split(X : pd.DataFrame, y : pd.DataFrame, size=.2):
     return train_test_split(X, y, test_size=size, stratify=y)
 
 
-def predict(data : pd.DataFrame, labels : pd.DataFrame, test : pd.DataFrame, classifier : namedtuple) -> np.array:
+def fit(data : pd.DataFrame, labels : pd.DataFrame, classifier : any) -> None:
     classifier.fit(data, labels)
 
-    return classifier.predict_proba(test)
+    # return classifier.predict_proba(test)
     # return classifier.predict(test) if hasattr(classifier, "decision_function") else classifier.predict_proba(test)
+
+def predict_proba(classifier : any, test : pd.DataFrame) -> np.array:
+    return classifier.predict_proba(test)
+
+def predict(classifier : any, test : pd.DataFrame) -> np.array:
+    return classifier.predict(test)
+
 
 def get_classifier(name : str) -> namedtuple:
     classifiers = {
@@ -213,19 +221,25 @@ if __name__ == '__main__':
         'gnb': GaussianNB(),
         'lgbm': LGBMClassifier(),
         'rf': RandomForestClassifier(n_estimators=100),
+        # 'catboost': CatBoostClassifier(iterations=10000, learning_rate=.1, depth=2)
     }
 
-    clf = StackingClassifier(estimators = list(classifiers.items()), final_estimator = LogisticRegression())
+    clf = StackingClassifier(estimators = list(classifiers.items()), final_estimator = CatBoostClassifier(iterations=10000, learning_rate=.1, depth=2))
     print('Starting prediction')
-    prediction = predict(X_train_split, y_train_split, X_test, clf)
+    fit(X_train_split, y_train_split, clf)
     print('Prediction done')
+    
+    prediction = predict_proba(clf, X_test_split)
 
-    # print_accuracy(prediction, y_test_split, 'Stacking')
+    print_accuracy(prediction, y_test_split, 'Stacking')
+
+    real_pred = predict_proba(clf, X_test)
+
     f = open("./pred.csv", "w")
     f.write("id,target\n")
     id_nr = 50000
-    for v in prediction[:, 1]:
+    for v in real_pred[:, 1]:
         f.write(f"{id_nr},{v}\n")
         id_nr += 1
     f.close()
-    save_predictions(clf.predict(X_test))
+    
