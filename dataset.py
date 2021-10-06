@@ -7,6 +7,8 @@ from sklearn.compose import make_column_transformer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder, OrdinalEncoder
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import SimpleImputer, IterativeImputer
+from sklearn.model_selection import GridSearchCV
+from sklearn.tree import DecisionTreeClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import GaussianNB
 from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier, StackingClassifier
@@ -250,18 +252,44 @@ if __name__ == '__main__':
         'gnb': GaussianNB(),
         'lgbm': LGBMClassifier(),
         'rf': RandomForestClassifier(n_estimators=100),
-        'catboost': CatBoostClassifier(iterations=10000, learning_rate=.1, depth=2)
+        'catboost': CatBoostClassifier(iterations=1000, learning_rate=1, depth=1)
     }
 
+    param_grid = {
+                "n_estimators": [1, 10, 100, 1000]
+                }
+
+
+    # DTC = DecisionTreeClassifier(random_state = 11, max_features = "auto", class_weight = "balanced" ,max_depth = None)
+
+    ABC = AdaBoostClassifier()
+    CAT = CatBoostClassifier()
+    # cat_params = {
+    #     "iterations": [10, 100, 1000, 10000],
+    #     "learning_rate": [1, .1, .01, .001, .0001],
+    #     "depth": [1,2,3,4,5]
+    # }
+    lgbm_params = {
+        "n_estimators": [10, 100, 1000, 10000],
+        "objective": ['binary', 'xentropy'],
+        "boosting": ['gbdt', 'rf', 'dart', 'goss'],
+        "learning_rate": [1, .1, .01, .001, .0001],
+        "max_depth": [-1, 1, 2, 3, 4, 5, 6, 7],
+        'num_leaves': [31, 1, 2, 4, 8, 16, 32, 64]
+    }
+    # run grid search
+    LGBM = LGBMClassifier()
+    clf = GridSearchCV(LGBM, param_grid=lgbm_params, scoring = 'roc_auc')
+
     # clf = StackingClassifier(estimators = list(classifiers.items()), final_estimator = CatBoostClassifier(iterations=10000, learning_rate=.1, depth=2))
-    clf = classifiers['adaboost']
-    print('Starting prediction')
+    # clf = classifiers['catboost']
+    # print('Starting prediction')
     fit(X_train_split, y_train_split, clf)
-    print('Prediction done')
-    
+    # print('Prediction done')
+    print(clf.best_params_) 
     prediction = predict_proba(clf, X_test_split)
 
-    print_accuracy(prediction, y_test_split, 'adaboost')
+    print_accuracy(prediction, y_test_split, 'grid')
 
     real_pred = predict_proba(clf, X_test)
 
