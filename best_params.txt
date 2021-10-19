@@ -1,2 +1,4 @@
 Catboost:
 {'depth': 1, 'iterations': 10000, 'learning_rate': 1}
+
+LGBM:
